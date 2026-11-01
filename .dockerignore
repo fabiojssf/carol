@@ -1,0 +1,56 @@
+# ==============================================================================
+# CAROL - .dockerignore
+# ==============================================================================
+
+# Controle de Versão
+.git/
+.gitignore
+.dockerignore
+
+# Ambientes Virtuais e Dependências Locais
+.venv/
+venv/
+env/
+ENV/
+
+# Bytecode e Caches Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Caches e Arquivos de Testes
+.pytest_cache/
+tests/
+pytest.ini
+.coverage
+htmlcov/
+
+# Bancos de Dados Locais e Temporários
+*.sqlite
+*.sqlite3
+*.db
+carol_data.sqlite*
+
+# Certidões Baixadas (gerenciadas via Volume no Docker Compose)
+certidoes/*
+!certidoes/.gitkeep
+
+# Variáveis de Ambiente e Segredos Locais
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# Sistema Operacional e Editores
+.DS_Store
+.DS_Store?
+._*
+.vscode/
+.idea/
+
+# Documentação Não Essencial ao Runtime
+README.md
+AGENTS.md

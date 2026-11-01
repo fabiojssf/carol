@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAROL - Sistema de Notificações para Movimentações de Processos</title>
+  <meta name="description" content="Plataforma de monitoramento automatizado e notificações via Webhook para comunicações processuais do PJe e DJEN do CNJ com 2FA e Gestão de Usuários.">
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- TELA DE LOGIN & 2FA (Visível por padrão até autenticar) -->
+  <div class="login-screen" id="login-screen">
+    <div class="login-card">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <div class="brand-icon" style="margin: 0 auto 1rem auto; width: 54px; height: 54px; font-size: 1.6rem;">C</div>
+        <h2 style="font-size: 1.5rem; font-weight: 800;">Acesso ao CAROL</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem;">Sistema de Notificações Processuais</p>
+      </div>
+
+      <!-- ETAPA 1: EMAIL E SENHA -->
+      <form id="form-login" onsubmit="realizarLogin(event)">
+        <div class="form-group">
+          <label class="form-label" for="login-email">E-mail</label>
+          <input type="email" id="login-email" class="form-input" placeholder="admin@carol.com" required autocomplete="email">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="login-senha">Senha</label>
+          <input type="password" id="login-senha" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="btn-login-submit" style="width: 100%; margin-top: 1rem;">
+          Entrar no Sistema
+        </button>
+      </form>
+
+      <!-- CONFIGURAÇÃO INICIAL (SE ZERO USUÁRIOS) -->
+      <form id="form-setup-inicial" onsubmit="realizarSetupInicial(event)" style="display: none;">
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🚀</div>
+          <h3 style="font-size: 1.25rem; font-weight: 700;">Configuração Inicial</h3>
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.35rem;">
+            Nenhum usuário cadastrado. Crie a conta do primeiro <strong>Administrador</strong> do sistema.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="setup-nome">Nome Completo</label>
+          <input type="text" id="setup-nome" class="form-input" placeholder="Ex: Administrador do Sistema" required autocomplete="name">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="setup-email">E-mail Profissional</label>
+          <input type="email" id="setup-email" class="form-input" placeholder="admin@suaempresa.com.br" required autocomplete="email">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="setup-senha">Senha de Acesso</label>
+          <input type="password" id="setup-senha" class="form-input" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="setup-senha-confirma">Confirmar Senha</label>
+          <input type="password" id="setup-senha-confirma" class="form-input" placeholder="Repita a senha" minlength="6" required autocomplete="new-password">
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="btn-setup-submit" style="width: 100%; margin-top: 1rem;">
+          Criar Administrador e Iniciar
+        </button>
+      </form>
+
+      <!-- ETAPA 2: CÓDIGO 2FA (GOOGLE AUTHENTICATOR) -->
+      <form id="form-login-2fa" onsubmit="confirmarLogin2FA(event)" style="display: none;">
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔐</div>
+          <h3 style="font-size: 1.2rem; font-weight: 700;">Autenticação em 2 Fatores</h3>
+          <p style="color: var(--text-secondary); font-size: 0.85rem;">Digite o código de 6 dígitos gerado no seu aplicativo <strong>Google Authenticator</strong> ou similar.</p>
+        </div>
+
+        <div class="form-group">
+          <input type="text" id="login-totp-codigo" class="form-input totp-input" maxlength="6" placeholder="000000" required autocomplete="one-time-code">
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="btn-login-2fa-submit" style="width: 100%;">
+          Verificar e Entrar
+        </button>
+
+        <button type="button" class="btn btn-secondary" onclick="voltarParaEtapa1Login()" style="width: 100%; margin-top: 0.75rem;">
+          Voltar
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- CONTEÚDO PRINCIPAL (PROTEGIDO POR AUTENTICAÇÃO) -->
+  <div id="app-main-layout" style="display: none;">
+
+    <!-- Header -->
+    <header>
+      <div class="container header-content">
+        <div class="brand">
+          <div class="brand-icon">C</div>
+          <div>
+            <h1 class="brand-title">CAROL</h1>
+            <p class="brand-subtitle">Monitor de Movimentações Processuais • DJEN / PJe</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <div class="status-badge" id="scheduler-badge">
+            <span class="pulse-dot"></span>
+            <span>Monitor Ativo (Cron Linux)</span>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" id="btn-varredura-geral" onclick="executarVarreduraGeral()">
+            ⚡ Varredura Geral
+          </button>
+          
+          <button class="btn btn-primary btn-sm" onclick="abrirModalNovaParte()">
+            + Cadastrar Parte
+          </button>
+
+          <!-- Perfil e Logout -->
+          <div class="user-menu">
+            <div class="user-avatar" id="user-avatar-initial">A</div>
+            <div style="font-size: 0.85rem;">
+              <div style="font-weight: 700; color: #f8fafc;" id="header-user-nome">Usuário</div>
+              <div style="font-size: 0.72rem; color: var(--text-muted);" id="header-user-badge">Admin</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="abrirModalGerenciar2FA()" title="Configurar Autenticação em Dois Fatores (Google Authenticator)" style="padding: 0.35rem 0.6rem;">
+              🔐 2FA
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="fazerLogout()" title="Sair do sistema" style="padding: 0.35rem 0.6rem;">
+              Sair
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="container" style="padding-top: 1.5rem; padding-bottom: 3rem;">
+
+      <!-- Métricas Globais -->
+      <section class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-info">
+            <h3>Partes Cadastradas</h3>
+            <div class="metric-value" id="metrica-total-partes">0</div>
+          </div>
+          <div class="metric-icon" style="color: var(--accent-indigo);">👥</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-info">
+            <h3>Partes em Monitoramento</h3>
+            <div class="metric-value" id="metrica-partes-ativas" style="color: var(--accent-emerald);">0</div>
+          </div>
+          <div class="metric-icon" style="color: var(--accent-emerald);">🟢</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-info">
+            <h3>Movimentações (Últimos 30 Dias)</h3>
+            <div class="metric-value" id="metrica-comunicacoes" style="color: var(--accent-cyan);">0</div>
+          </div>
+          <div class="metric-icon" style="color: var(--accent-cyan);">📜</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-info">
+            <h3>Webhooks Disparados</h3>
+            <div class="metric-value" id="metrica-webhooks" style="color: var(--accent-amber);">0</div>
+          </div>
+          <div class="metric-icon" style="color: var(--accent-amber);">⚡</div>
+        </div>
+      </section>
+
+      <!-- Navegação por Abas -->
+      <nav class="nav-tabs" aria-label="Navegação do Sistema">
+        <button class="tab-btn active" id="tab-btn-partes" onclick="trocarAba('partes')">
+          👥 Partes Monitoradas
+        </button>
+        <button class="tab-btn" id="tab-btn-movimentacoes" onclick="trocarAba('movimentacoes')">
+          📜 Movimentações Processuais (30 Dias)
+        </button>
+        <button class="tab-btn" id="tab-btn-webhooks" onclick="trocarAba('webhooks')">
+          ⚡ Histórico de Webhooks
+        </button>
+        <button class="tab-btn" id="tab-btn-tribunais" onclick="trocarAba('tribunais')">
+          🏛️ Tribunais Integrados
+        </button>
+        <button class="tab-btn" id="tab-btn-admin" onclick="trocarAba('admin')" style="display: none;">
+          ⚙️ Área Administrativa (Usuários)
+        </button>
+      </nav>
+
+      <!-- ABA 1: PARTES MONITORADAS -->
+      <section id="aba-partes" class="tab-content active">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Partes Cadastradas para Monitoramento</h2>
+            <p class="form-help">As consultas ocorrem automaticamente baseadas na expressão Cron de cada parte, buscando 30 dias para trás.</p>
+          </div>
+          <button class="btn btn-primary" onclick="abrirModalNovaParte()">
+            + Nova Parte
+          </button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Parte Monitorada</th>
+                  <th>Webhook de Notificação</th>
+                  <th>Frequência Cron</th>
+                  <th>Tribunal</th>
+                  <th>Status</th>
+                  <th>Próxima Checagem</th>
+                  <th>Alertas</th>
+                  <th style="text-align: right;">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="tabela-partes-body">
+                <tr>
+                  <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+                    Carregando partes cadastradas...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 2: MOVIMENTAÇÕES PROCESSUAIS (COM BARRA DE FILTRO POR PARTE) -->
+      <section id="aba-movimentacoes" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Movimentações e Intimações no Snapshot (30 Dias)</h2>
+            <p class="form-help">Intimações coletadas para as partes monitoradas. O sistema compara com este snapshot para só notificar se houver alteração.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="carregarComunicacoes()">
+            🔄 Atualizar Lista
+          </button>
+        </div>
+
+        <!-- BARRA DE FILTRO DINÂMICO SOLICITADA PELO USUÁRIO -->
+        <div class="filter-bar">
+          <div class="filter-item">
+            <label class="form-label" style="margin: 0; white-space: nowrap;">Filtrar por Parte:</label>
+            <select id="filtro-comunicacao-parte" class="form-select" onchange="carregarComunicacoes()">
+              <option value="">Todas as Partes Monitoradas</option>
+            </select>
+          </div>
+
+          <div class="filter-item">
+            <input type="text" id="filtro-comunicacao-busca" class="form-input" placeholder="Buscar por nº de processo ou texto..." oninput="filtrarCardsComunicacoesLocalmente()">
+          </div>
+
+          <button class="btn btn-secondary btn-sm" onclick="limparFiltrosComunicacoes()">
+            Limpar Filtros
+          </button>
+        </div>
+
+        <div class="comunicacoes-grid" id="comunicacoes-feed">
+          <p style="color: var(--text-muted); text-align: center; padding: 3rem;">
+            Nenhuma movimentação registrada até o momento. Cadastre partes e execute uma consulta.
+          </p>
+        </div>
+      </section>
+
+      <!-- ABA 3: HISTÓRICO DE WEBHOOKS -->
+      <section id="aba-webhooks" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Registro de Disparos de Webhook</h2>
+            <p class="form-help">Histórico detalhado com status HTTP de cada evento disparado para os endpoints configurados.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="carregarHistoricoWebhooks()">
+            🔄 Atualizar Logs
+          </button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data / Hora</th>
+                  <th>Parte</th>
+                  <th>Processo</th>
+                  <th>Endpoint Webhook</th>
+                  <th>Status HTTP</th>
+                  <th>Resultado</th>
+                  <th style="text-align: right;">Detalhes</th>
+                </tr>
+              </thead>
+              <tbody id="tabela-webhooks-body">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                    Nenhum evento registrado ainda.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 4: TRIBUNAIS INTEGRADOS -->
+      <section id="aba-tribunais" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Tribunais e Órgãos Integrados ao CNJ / DJEN</h2>
+            <p class="form-help">Lista oficial de todas as instituições judiciais cobertas pela plataforma nacional.</p>
+          </div>
+        </div>
+
+        <div id="tribunais-container" class="metrics-grid">
+          <p style="color: var(--text-muted);">Carregando tribunais...</p>
+        </div>
+      </section>
+
+      <!-- ABA 5: ÁREA ADMINISTRATIVA (GESTÃO DE USUÁRIOS E 2FA) -->
+      <section id="aba-admin" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Área Administrativa • Gestão de Usuários e Acessos</h2>
+            <p class="form-help">Cadastre os colaboradores que terão acesso ao sistema e gerencie a autenticação em dois fatores (2FA).</p>
+          </div>
+          <button class="btn btn-primary" onclick="abrirModalNovoUsuario()">
+            + Cadastrar Usuário
+          </button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome do Usuário</th>
+                  <th>E-mail</th>
+                  <th>Perfil</th>
+                  <th>Autenticação 2FA</th>
+                  <th>Status</th>
+                  <th>Cadastrado em</th>
+                  <th style="text-align: right;">Ações Administrativas</th>
+                </tr>
+              </thead>
+              <tbody id="tabela-usuarios-body">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+                    Carregando usuários...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: CADASTRAR / EDITAR PARTE -->
+  <div class="modal-overlay" id="modal-parte">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-parte-titulo">Cadastrar Nova Parte</h3>
+        <button class="modal-close" onclick="fecharModalParte()">&times;</button>
+      </div>
+
+      <form id="form-parte" onsubmit="salvarParte(event)">
+        <input type="hidden" id="parte-id" value="">
+
+        <div class="form-group">
+          <label class="form-label" for="parte-nome">Nome da Parte (Pessoa Física ou Jurídica) *</label>
+          <input type="text" id="parte-nome" class="form-input" placeholder="Ex: BANCO BRADESCO S.A. ou NOME COMPLETO" required>
+          <p class="form-help">Exatamente como consta nos processos judiciais para busca no Diário da Justiça.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="parte-webhook">URL do Webhook *</label>
+          <input type="url" id="parte-webhook" class="form-input" placeholder="https://seu-servidor.com/webhook/intimacoes" required>
+          <p class="form-help">O CAROL enviará um HTTP POST com o JSON completo sempre que houver novidade nesta parte.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="parte-cron">Frequência da Checagem (Expressão Cron Linux) *</label>
+          <input type="text" id="parte-cron" class="form-input" value="0 */2 * * *" required style="font-family: var(--font-mono);">
+          <div class="cron-presets">
+            <button type="button" class="cron-preset-btn" onclick="definirCron('0 */2 * * *')">A cada 2 horas (Padrão)</button>
+            <button type="button" class="cron-preset-btn" onclick="definirCron('0 8,17 * * *')">2x ao dia (08h e 17h)</button>
+            <button type="button" class="cron-preset-btn" onclick="definirCron('0 8 * * *')">1x ao dia (08h)</button>
+            <button type="button" class="cron-preset-btn" onclick="definirCron('*/30 * * * *')">A cada 30 min</button>
+          </div>
+          <p class="form-help">Padrão Linux: minuto hora dia-mês mês dia-semana.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="parte-tribunal">Tribunal Específico (Opcional)</label>
+          <input type="text" id="parte-tribunal" class="form-input" placeholder="Ex: TJSP, TRT2, TRF3 (ou vazio para Nacional)">
+          <p class="form-help">Deixe em branco para buscar em todos os tribunais integrados ao CNJ.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="parte-data-inicio">Data Inicial de Monitoramento (Opcional)</label>
+          <input type="date" id="parte-data-inicio" class="form-input">
+          <p class="form-help">Se preenchida, o sistema varrerá desde essa data até hoje. Deixe em branco para a janela padrão de 30 dias.</p>
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem;">
+          <input type="checkbox" id="parte-ativo" checked style="width: 18px; height: 18px; accent-color: var(--accent-indigo);">
+          <label for="parte-ativo" style="font-size: 0.9rem; font-weight: 500;">Monitoramento ativo para esta parte</label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="fecharModalParte()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-salvar-parte">Salvar Parte</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CADASTRAR / EDITAR USUÁRIO -->
+  <div class="modal-overlay" id="modal-usuario">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-usuario-titulo">Cadastrar Novo Usuário</h3>
+        <button class="modal-close" onclick="fecharModalUsuario()">&times;</button>
+      </div>
+
+      <form id="form-usuario" onsubmit="salvarUsuario(event)">
+        <input type="hidden" id="usuario-id" value="">
+
+        <div class="form-group">
+          <label class="form-label" for="usuario-nome">Nome Completo *</label>
+          <input type="text" id="usuario-nome" class="form-input" placeholder="Ex: Maria Silva" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="usuario-email">E-mail de Acesso *</label>
+          <input type="email" id="usuario-email" class="form-input" placeholder="usuario@empresa.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="usuario-senha" id="label-usuario-senha">Senha de Acesso *</label>
+          <input type="password" id="usuario-senha" class="form-input" placeholder="Mínimo de 6 caracteres">
+          <p class="form-help" id="help-usuario-senha">Deixe em branco caso não queira alterar a senha atual.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="usuario-perfil">Nível de Acesso (Perfil) *</label>
+          <select id="usuario-perfil" class="form-select">
+            <option value="operador">Operador (Acesso ao Monitor e Consultas)</option>
+            <option value="admin">Administrador (Acesso Total + Gestão de Usuários)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem;">
+          <input type="checkbox" id="usuario-ativo" checked style="width: 18px; height: 18px; accent-color: var(--accent-indigo);">
+          <label for="usuario-ativo" style="font-size: 0.9rem; font-weight: 500;">Usuário Ativo</label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="fecharModalUsuario()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-salvar-usuario">Salvar Usuário</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: GERENCIAR 2FA (GOOGLE AUTHENTICATOR) -->
+  <div class="modal-overlay" id="modal-2fa">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Configurar Autenticação em Dois Fatores (2FA)</h3>
+        <button class="modal-close" onclick="fecharModal2FA()">&times;</button>
+      </div>
+
+      <div id="conteudo-ativacao-2fa">
+        <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+          Aumente a segurança da sua conta adicionando uma camada extra de proteção com o <strong>Google Authenticator</strong>, Microsoft Authenticator ou 1Password.
+        </p>
+
+        <div style="text-align: center; margin: 1.5rem 0;">
+          <div class="qr-box" id="box-qr-code">
+            <img id="img-qrcode-2fa" src="" alt="QR Code 2FA" style="width: 190px; height: 190px; display: block;">
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">Ou insira a chave manualmente no aplicativo:</p>
+          <div id="texto-chave-backup-2fa" style="font-family: var(--font-mono); font-size: 0.95rem; font-weight: 700; color: var(--accent-cyan); letter-spacing: 0.1em; user-select: all;"></div>
+        </div>
+
+        <form id="form-confirmar-2fa" onsubmit="confirmarAtivacao2FA(event)">
+          <div class="form-group">
+            <label class="form-label" for="codigo-confirmar-2fa">Digite o código de 6 dígitos exibido no aplicativo:</label>
+            <input type="text" id="codigo-confirmar-2fa" class="form-input totp-input" maxlength="6" placeholder="000000" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%;">
+            Confirmar e Ativar 2FA
+          </button>
+        </form>
+      </div>
+
+      <div id="conteudo-desativar-2fa" style="display: none;">
+        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-emerald); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.5rem;">
+          <h4 style="color: var(--accent-emerald); margin-bottom: 0.25rem;">✓ 2FA Ativo na sua Conta</h4>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);">Sua conta está protegida com o Google Authenticator.</p>
+        </div>
+
+        <form id="form-desativar-2fa" onsubmit="desativar2FA(event)">
+          <div class="form-group">
+            <label class="form-label" for="senha-desativar-2fa">Confirme sua senha para desativar o 2FA:</label>
+            <input type="password" id="senha-desativar-2fa" class="form-input" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="btn btn-danger" style="width: 100%;">
+            Desativar Autenticação em Dois Fatores
+          </button>
+        </form>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="fecharModal2FA()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DETALHES DO TESTE DE WEBHOOK -->
+  <div class="modal-overlay" id="modal-teste-webhook">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Resultado do Teste de Webhook</h3>
+        <button class="modal-close" onclick="fecharModalTesteWebhook()">&times;</button>
+      </div>
+
+      <div id="teste-webhook-conteudo">
+        <p style="color: var(--text-muted);">Disparando teste...</p>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="fecharModalTesteWebhook()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Container de Alertas Flutuantes (Toast) -->
+  <div id="toast-container"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
